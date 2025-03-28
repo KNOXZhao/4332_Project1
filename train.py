@@ -15,11 +15,11 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 # -----------------------
 # 1. Load Data
 # -----------------------
-train_df = pd.read_csv("review.csv")
-val_df = pd.read_csv("validation.csv")
-test_df = pd.read_csv("prediction.csv")
+train_df = pd.read_csv("./data/review.csv")
+val_df = pd.read_csv("./data/validation.csv")
+test_df = pd.read_csv("./data/prediction.csv")
 
-with open("product.json", "r") as f:
+with open("./data/product.json", "r") as f:
     product_data = json.load(f)
 product_df = pd.DataFrame(product_data)
 
@@ -142,46 +142,68 @@ class RatingPredictor(nn.Module):
     def __init__(self, num_users, num_items, vocab_size, num_cats, num_brands, max_seq_len,
                  user_emb_dim=32, item_emb_dim=32, word_emb_dim=100, cat_emb_dim=8, brand_emb_dim=8):
         super(RatingPredictor, self).__init__()
+        # Embedding layers
         self.user_emb = nn.Embedding(num_users, user_emb_dim)
         self.item_emb = nn.Embedding(num_items, item_emb_dim)
         self.word_emb = nn.Embedding(vocab_size, word_emb_dim)
         self.cat_emb = nn.Embedding(num_cats, cat_emb_dim)
         self.brand_emb = nn.Embedding(num_brands, brand_emb_dim)
-        # CNN for text
-        self.conv1d = nn.Conv1d(in_channels=word_emb_dim, out_channels=50, kernel_size=3)
-        self.maxpool = nn.AdaptiveMaxPool1d(1)
         
-        # Calculate combined feature dimension:
-        # user + item + text (50) + category + brand
-        combined_dim = user_emb_dim + item_emb_dim + 50 + cat_emb_dim + brand_emb_dim
-        self.fc1 = nn.Linear(combined_dim, 64)
+        # Multi-kernel CNN for review text
+        self.conv1d_3 = nn.Conv1d(in_channels=word_emb_dim, out_channels=50, kernel_size=3)
+        self.conv1d_4 = nn.Conv1d(in_channels=word_emb_dim, out_channels=50, kernel_size=4)
+        self.conv1d_5 = nn.Conv1d(in_channels=word_emb_dim, out_channels=50, kernel_size=5)
+        self.pool = nn.AdaptiveMaxPool1d(1)  # Global max pooling for each convolution
+        
+        # Combined feature dimension: user + item + text features (3*50 = 150) + category + brand
+        combined_dim = user_emb_dim + item_emb_dim + 150 + cat_emb_dim + brand_emb_dim
+        self.fc1 = nn.Linear(combined_dim, 128)
+        self.bn1 = nn.BatchNorm1d(128)
         self.dropout1 = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(64, 32)
+        self.fc2 = nn.Linear(128, 64)
+        self.bn2 = nn.BatchNorm1d(64)
         self.dropout2 = nn.Dropout(0.3)
-        self.fc_out = nn.Linear(32, 1)
+        # Final output layer with scaled sigmoid so predictions fall in [1,5]
+        self.fc_out = nn.Linear(64, 1)
         
     def forward(self, user_ids, item_ids, text_seq, cat_ids, brand_ids):
+        # Get embeddings for user and item
         user_vec = self.user_emb(user_ids)       # (batch, 32)
-        item_vec = self.item_emb(item_ids)       # (batch, 32)
-        # Process text:
-        # text_seq: (batch, max_seq_len) -> word embeddings: (batch, max_seq_len, word_emb_dim)
-        text_emb = self.word_emb(text_seq)       # (batch, max_seq_len, word_emb_dim)
-        # Rearrange to (batch, word_emb_dim, max_seq_len) for Conv1d
-        text_emb = text_emb.transpose(1, 2)
-        conv_out = F.relu(self.conv1d(text_emb))  # (batch, 50, L) where L = max_seq_len - 3 + 1
-        pooled = self.maxpool(conv_out).squeeze(-1)  # (batch, 50)
+        item_vec = self.item_emb(item_ids)         # (batch, 32)
         
-        cat_vec = self.cat_emb(cat_ids)          # (batch, cat_emb_dim)
-        brand_vec = self.brand_emb(brand_ids)      # (batch, brand_emb_dim)
+        # Process review text
+        # text_seq: (batch, max_seq_len) -> word embeddings: (batch, max_seq_len, word_emb_dim)
+        text_emb = self.word_emb(text_seq)         # (batch, max_seq_len, word_emb_dim)
+        text_emb = text_emb.transpose(1, 2)         # (batch, word_emb_dim, max_seq_len)
+        
+        # Apply three parallel convolutions with different kernel sizes
+        conv3 = F.relu(self.conv1d_3(text_emb))     # (batch, 50, L3)
+        pool3 = self.pool(conv3).squeeze(-1)         # (batch, 50)
+        
+        conv4 = F.relu(self.conv1d_4(text_emb))     # (batch, 50, L4)
+        pool4 = self.pool(conv4).squeeze(-1)         # (batch, 50)
+        
+        conv5 = F.relu(self.conv1d_5(text_emb))     # (batch, 50, L5)
+        pool5 = self.pool(conv5).squeeze(-1)         # (batch, 50)
+        
+        # Concatenate text features from all kernels
+        text_features = torch.cat([pool3, pool4, pool5], dim=1)  # (batch, 150)
+        
+        # Get metadata embeddings
+        cat_vec = self.cat_emb(cat_ids)             # (batch, cat_emb_dim)
+        brand_vec = self.brand_emb(brand_ids)         # (batch, brand_emb_dim)
         
         # Concatenate all features
-        combined = torch.cat([user_vec, item_vec, pooled, cat_vec, brand_vec], dim=1)
-        x = F.relu(self.fc1(combined))
+        combined = torch.cat([user_vec, item_vec, text_features, cat_vec, brand_vec], dim=1)
+        
+        # Fully connected layers with BatchNorm and Dropout
+        x = F.relu(self.bn1(self.fc1(combined)))
         x = self.dropout1(x)
-        x = F.relu(self.fc2(x))
+        x = F.relu(self.bn2(self.fc2(x)))
         x = self.dropout2(x)
-        out = self.fc_out(x)
-        return out.squeeze(1)  # (batch,)
+        # Use a scaled sigmoid so that outputs are between 1 and 5.
+        out = 1 + 4 * torch.sigmoid(self.fc_out(x))
+        return out.squeeze(1)
     
 # Define sizes (add +1 to account for unknown index 0)
 num_users = len(user_to_index) + 1
@@ -199,7 +221,7 @@ model.to(device)
 # -----------------------
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-NUM_EPOCHS = 5
+NUM_EPOCHS = 10
 
 def evaluate(model, loader):
     model.eval()
