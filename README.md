@@ -22,7 +22,7 @@
     2. different learning rate for different parameters, with smaller leanring rate of 1e-4 for user embedding and item embeddings as they are generated from pretrined models
     3. optimizer: AdamW 
     4. learning rate schedular: warmup_lr_scheduler for first 5 epochs, fixed_lr_scheduler until 20 epochs and finally CosineAnnealingLR for remaining epochs
-    5. **Masking Input data** the input user id and item id will be masked as 0 (i.e. Unknown user or item) will probability 0.05 and 0.3 to mimic the case that there will be unseen user and item in the validation set and test set
+    5. **Masking Input data** the input user id and item id will be masked as 0 (i.e. Unknown user or item) with probability 0.05 and 0.3 to mimic the case that there will be unseen user and item in the validation set and test set
     6. p.s. the ratio of 0.05 to 0.3 is to approximate the ratio of new user and item in the validation set and test set (refer to **section "# Load Data"**)
 
 ## Other fail trial on NeuralCF (NeuralCF.ipynb):
