@@ -29,6 +29,7 @@
 1. Model Architecture (refer to **section "3rd set of param"**)
     1. Neural CF with GMF (same) and MLP (with different architecture)
     2. GMF and MLP use **different** item and user embeddings
+    3. train with masking input: **Validation RMSE** of 1.0292
 
 ## Other fail trial on deep model (train.ipynb):
 1. Create User feature embedding:
