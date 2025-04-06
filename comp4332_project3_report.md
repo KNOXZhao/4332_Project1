@@ -87,7 +87,7 @@ Our training strategy incorporated several advanced techniques:
 
 <!-- [Photo: Learning Rate Schedule] -->
 
-<img src="images/2025-04-04-23-50-22.png" width="70%" height="70%" style="display: block; margin: 0 auto;">
+<img src="picture/Loss_Curve_NeuralCF_2nd_param.png" width="70%" height="70%" style="display: block; margin: 0 auto;">
 
 ### 2.5 Evaluation Results
 
