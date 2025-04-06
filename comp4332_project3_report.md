@@ -1,19 +1,12 @@
 # COMP4332 Project 1 Report
 
-**Group 5:** YUNG Ka Shing, ZHAO Yubo, Tam Kiu Wai, Nguyen Kim Hue Nam 
+**Group 5:** YUNG Ka Shing (Andy), ZHAO Yubo (Knox), Tam Kiu Wai (Kelvin), Nguyen Kim Hue Nam (Newt)
 
 ## 1. Introduction
 
-For this project, we used two approaches: **Neural CF** and **Wide & Deep Learning**. 
-
-This report details our methodology, implementation choices, experimental results, and key insights gained throughout the process. Our best-performing model achieved **RMSE** of **0.8441** on the validation set.
-
-<!-- [Photo: Dataset Overview]
-*Include a visualization showing the distribution of ratings in the dataset (histogram) and possibly a heatmap of user-item interactions to illustrate the sparsity of the data.* -->
+This report details our methodology and results for the movie rating prediction task. Our best-performing model (**Neural CF with Shared Embeddings**) achieved an **RMSE** of **0.8441** on the validation set.
 
 ## 2. Neural CF Model
-
-Our best-performing approach used **Neural CF**.
 
 ### 2.1 Data Analysis and Cold Start Problem
 
@@ -27,46 +20,20 @@ Number of rows in validation set with only ReviewerID not in training set: 359
 length of new users: 47
 length of new items: 302
 ratio: 6.425531914893617
-
-# Test set analysis:
-Number of rows in test set with both ProductID and ReviewerID not in training set: 34
-Number of rows in test set with only ProductID not in training set: 1166
-Number of rows in test set with only ReviewerID not in training set: 349
-length of new users: 42
-length of new items: 311
-ratio: 7.404761904761905
 ```
 This analysis revealed an imbalance in the cold-start problem, which informed our masking strategy.
 
-Our implementation's core innovation was the effective initialization and learning of **embeddings** to capture user preferences and item characteristics, with a specialized approach for handling unseen entities.
+<!-- Our implementation's core innovation was the effective initialization and learning of **embeddings** to capture user preferences and item characteristics, with a specialized approach for handling unseen entities. -->
 
 ### 2.2 Data Preprocessing
+1. **ID Encoding**: Converting categorical IDs to numerical indices with index 0 reserved for unknown entities
+2. **Text-based Embeddings**: Initializing user and item embeddings using the lightweight `avsolatorio/GIST-small-Embedding-v0` text encoder
+3. **Cold Start Handling**: Special embeddings for unknown users/items based on encoding "Unknown_User" and "Unknown_Item"
 
-#### 2.2.1 User and Item ID Encoding
+### 2.3 Model Architecture
+2 complementary components: **GMF** and **MLP**.
 
-The first preprocessing step was converting categorical user and item IDs into numerical indices for model consumption. We reserved index 0 for unknown entities to handle the cold start problem:
-
-```python
-# User and Product IDs
-unique_users = train_df["ReviewerID"].unique().tolist()
-unique_items = train_df["ProductID"].unique().tolist()
-user_to_index = {u: i+1 for i, u in enumerate(unique_users)}  # reserve 0 for unknown
-item_to_index = {p: i+1 for i, p in enumerate(unique_items)}
-unknown_user_idx = 0
-unknown_item_idx = 0
-
-train_user_idx = train_df["ReviewerID"].apply(lambda x: user_to_index.get(x, unknown_user_idx)).values
-train_item_idx = train_df["ProductID"].apply(lambda x: item_to_index.get(x, unknown_item_idx)).values
-val_user_idx = val_df["ReviewerID"].apply(lambda x: user_to_index.get(x, unknown_user_idx)).values
-val_item_idx = val_df["ProductID"].apply(lambda x: item_to_index.get(x, unknown_item_idx)).values
-test_user_idx = test_df["ReviewerID"].apply(lambda x: user_to_index.get(x, unknown_user_idx)).values
-test_item_idx = test_df["ProductID"].apply(lambda x: item_to_index.get(x, unknown_item_idx)).values
-```
-
-#### 2.2.2 Embedding Approaches
-
-We explored two distinct embedding approaches for representing users and items:
-
+2 distinct embedding approaches for users and items:
 1. **Lookup Table Approach**: Using standard `torch.nn.Embeddings` for both reviewers and products
 2. **Lookup Table with Text Encoder**: Employing a text encoder for both user and item embeddings, and a lookup table for reviewer embeddings
 
@@ -104,9 +71,9 @@ The specific architecture includes:
 - **Fusion layer**: Concatenation of GMF and MLP outputs, followed by a linear layer
 - Final activation: Modified **sigmoid** (scaled to output range [1, 5]): `1 + 4 * torch.sigmoid(x)`
 
-[Photo: Neural CF Model Architecture]
+Model architecture:
 
-Then, concatenate outputs from GMF and MLP as input to dense layer with modified sigmoid function as `1 + 4 * torch.sigmoid(x)`
+<img src="picture/model_architecture.png" width="70%" height="70%" style="display: block; margin: 0 auto;">
 
 ### 2.4 Training Process
 
@@ -120,67 +87,56 @@ Our training strategy incorporated several advanced techniques:
 
 <!-- [Photo: Learning Rate Schedule] -->
 
+<img src="images/2025-04-04-23-50-22.png" width="70%" height="70%" style="display: block; margin: 0 auto;">
+
 ### 2.5 Evaluation Results
 
-Our Neural CF model achieved an **RMSE** of 0.8441 on the validation set.
+Our Neural CF model achieved an **RMSE** of **0.8441** on the validation set at epoch 13. Below is a condensed training log:
 
-Loss and RMSE logs: at epoch 13, the validation rmse is the **lowest**
-```python
-Epoch 1/50 -- Train Loss: 3.5369  Train RMSE: 1.8807  Val Loss: 3.2495  Val RMSE: 1.8026
-Checkpoint saved at epoch 1 with validation rmse 1.8026
-Epoch 2/50 -- Train Loss: 1.0728  Train RMSE: 1.0358  Val Loss: 1.0340  Val RMSE: 1.0168
-Checkpoint saved at epoch 2 with validation rmse 1.0168
-Epoch 3/50 -- Train Loss: 0.9187  Train RMSE: 0.9585  Val Loss: 1.0439  Val RMSE: 1.0217
-Epoch 4/50 -- Train Loss: 0.8982  Train RMSE: 0.9477  Val Loss: 0.8851  Val RMSE: 0.9408
-Checkpoint saved at epoch 4 with validation rmse 0.9408
-Epoch 5/50 -- Train Loss: 0.7169  Train RMSE: 0.8467  Val Loss: 0.7602  Val RMSE: 0.8719
-Checkpoint saved at epoch 5 with validation rmse 0.8719
-Epoch 6/50 -- Train Loss: 0.6134  Train RMSE: 0.7832  Val Loss: 0.7602  Val RMSE: 0.8719
-Epoch 7/50 -- Train Loss: 0.6109  Train RMSE: 0.7816  Val Loss: 0.7602  Val RMSE: 0.8719
-Epoch 8/50 -- Train Loss: 0.6148  Train RMSE: 0.7841  Val Loss: 0.7602  Val RMSE: 0.8719
-Epoch 9/50 -- Train Loss: 0.6170  Train RMSE: 0.7855  Val Loss: 0.7602  Val RMSE: 0.8719
-Epoch 10/50 -- Train Loss: 0.6145  Train RMSE: 0.7839  Val Loss: 0.7602  Val RMSE: 0.8719
-Epoch 11/50 -- Train Loss: 0.6077  Train RMSE: 0.7796  Val Loss: 0.7371  Val RMSE: 0.8586
-Checkpoint saved at epoch 11 with validation rmse 0.8586
-Epoch 12/50 -- Train Loss: 0.5515  Train RMSE: 0.7427  Val Loss: 0.7400  Val RMSE: 0.8603
-Epoch 13/50 -- Train Loss: 0.5255  Train RMSE: 0.7249  Val Loss: 0.7125  Val RMSE: 0.8441
-
-Checkpoint saved at epoch 13 with validation rmse 0.8441
-
-Epoch 14/50 -- Train Loss: 0.5052  Train RMSE: 0.7108  Val Loss: 0.7208  Val RMSE: 0.8490
-Epoch 15/50 -- Train Loss: 0.4937  Train RMSE: 0.7026  Val Loss: 0.7293  Val RMSE: 0.8540
-Epoch 16/50 -- Train Loss: 0.4822  Train RMSE: 0.6944  Val Loss: 0.7344  Val RMSE: 0.8570
-...
+```
+Epoch 1/50 -- Train RMSE: 1.8807  Val RMSE: 1.8026
+Epoch 5/50 -- Train RMSE: 0.8467  Val RMSE: 0.8719
+Epoch 11/50 -- Train RMSE: 0.7796  Val RMSE: 0.8586
+Epoch 13/50 -- Train RMSE: 0.7249  Val RMSE: 0.8441 ← Best result
 ```
 
-[Photo: Training Curve]
+## 3. Alternative Approaches
 
-![](images/2025-04-04-23-50-22.png)
+### 3.1 Failed Neural CF trial
 
-## 3. Other Fail Trial
+This time the model architecture remain teh same for Neural CF with GMF, but different architecture for MLP. Also, GMF and MLP use different item and user embeddings.
 
-### 3.1 Failed Trial on NeuralCF with Separate Embeddings
+This approach achieved an Validation RMSE of **1.0292**
 
-In this approach, we modified the Neural CF architecture to use **separate embedding layers** for GMF and MLP components (**192-dimensional** for GMF, **384-dimensional** for MLP) instead of shared embeddings. The model used a **simplified MLP structure** with different normalization order and **no skip connections**. 
+For details, please refer to 3rd sets of parameter in the notebook.
 
-:::danger
-This approach only achieved an RMSE of **?????** on the validation set.
-:::
+<img src="picture/Loss_Curve_NeuralCF_3rd_param.png" width="70%" height="70%" style="display: block; margin: 0 auto;">
 
 ### 3.2 Failed Trial on Deep model
 For users, we employed **"meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"** to summarize user preferences, then converted these summaries to **384-dimensional** embeddings using **'all-MiniLM-L6-v2'**. 
 
-For products, we extracted meaningful metadata including **main categories** and **brand information** from `product.json`. Our architecture combined embeddings for users, items, user features, categories, and brands, processing them through **three MLP layers** before applying a modified sigmoid activation `1 + 4 * torch.sigmoid(x)`. This approach yielded a validation RMSE of **0.8858** without input masking, which improved to **0.8756** when we implemented masking strategies.
+For products, we extracted the main category as the last category that is not an HTML artifact and brand from `product.json`. Our architecture combined embeddings for users, items, user features, categories, and brands, processing them through three MLP layers before applying a modified sigmoid activation `1 + 4 * torch.sigmoid(x)`. This approach yielded a validation RMSE of **0.8858** without input masking, which improved to **0.8756** when we implemented masking strategies.
+
+with input masking:
+
+<img src="picture/Loss_Curve_Deep_Model_Input_Mask.png" width="70%" height="70%" style="display: block; margin: 0 auto;">
+
+without input masking:
+
+<img src="picture/Loss_Curve_Deep_Model.png" width="70%" height="70%" style="display: block; margin: 0 auto;">
+
+### 3.3 Failed Wide and Deep Model
+
+We also experimented with a Wide and Deep model approach, which achieved a validation RMSE of **0.878**. This was another alternative approach that didn't outperform our best model.
 
 ## 4. Conclusion
 
-
-We have 3 models:
 | Model | Description | Validation RMSE |
 |-------|-------------|----------------|
-| Neural CF (Shared Embeddings) | best model | **0.8441** |
-| Neural CF (Separate Embeddings) | Modified Neural CF with separate embeddings for GMF and MLP, simplified MLP structure | **????** |
-| Deep Model with LLM | Deep network using LLM-generated user features and product metadata | 0.8756 |
+| Neural CF with Shared Embeddings | Best model with text-initialized embeddings and masking strategy | **0.8441** |
+| Neural CF with Separate Embeddings | Modified Neural CF with separate embeddings | **1.0292** |
+| Deep Model with LLM | Deep network using LLM features | **0.8756** |
+| Wide and Deep Model | Combination of wide linear model and deep neural network | **0.878** |
 
-
-Our best-performing model achieved an **RMSE** of **0.8441** on the validation set. Thus, we can conclude that the **Neural CF** model with **shared embeddings** is the best model for this dataset.
+The best model is **Neural CF with Shared Embeddings**, with an RMSE of **0.8441** on the validation set.
+<!-- Our results demonstrate that carefully designed shared embeddings with strategic initialization and training outperform more complex or specialized architectures. The most effective approach combines **representation learning** (shared embeddings), **transfer learning** (text-based initialization), and **data augmentation** (masking strategy). -->
